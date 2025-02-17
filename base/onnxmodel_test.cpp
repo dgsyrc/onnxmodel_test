@@ -289,7 +289,9 @@ int main()
     cv::VideoCapture cap(fmt::format("{}{}", SOURCE_PATH, "/videos/test.mp4"));
     Mat src_img;
     int frame_count = 0;
+    int total_frame = 0;
     auto last_time = chrono::high_resolution_clock::now();
+    auto start_time = chrono::high_resolution_clock::now();
     double fps = 0.0;
     cap.read(src_img);
 
@@ -302,13 +304,18 @@ int main()
         while (!src_img.empty())
         {
             frame_count++;
-
+            total_frame++;
+            if (frame_count % 4 != 1)
+            {
+                continue;
+            }
             mynet.detect(src_img);
-            static const string kWinName = "Deep learning object detection in OpenCV";
+            static const string kWinName = "Output";
             namedWindow(kWinName, WINDOW_NORMAL);
 
             auto current_time = chrono::high_resolution_clock::now();
             chrono::duration<double> elapsed = current_time - last_time;
+            chrono::duration<double> elapsed_from_start = current_time - start_time;
             if (elapsed.count() >= 1.0)
             {
                 fps = frame_count / elapsed.count();
@@ -316,10 +323,13 @@ int main()
                 last_time = current_time;
             }
             string fps_text = "FPS: " + to_string(int(fps));
+            string frame_text = "Frame: " + to_string(int(total_frame));
+            string time_text = "Time: " + to_string(int(elapsed_from_start.count())) + "s";
             putText(src_img, fps_text, Point(10, 30), FONT_HERSHEY_SIMPLEX, 1, Scalar(0, 255, 0), 2);
-
+            putText(src_img, frame_text, Point(10, 60), FONT_HERSHEY_SIMPLEX, 1, Scalar(0, 255, 0), 2);
+            putText(src_img, time_text, Point(10, 90), FONT_HERSHEY_SIMPLEX, 1, Scalar(0, 255, 0), 2);
             imshow(kWinName, src_img);
-            cv::waitKey(10);
+            cv::waitKey(1);
             cap.read(src_img);
         }
     }
