@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <chrono>
 #include <math.h>
 #include <fmt/core.h>
 #include <fmt/color.h>
@@ -267,7 +268,7 @@ void NanoDet_Plus::detect(Mat &srcimg)
         rectangle(srcimg, Point(xmin, ymin), Point(xmax, ymax), Scalar(0, 0, 255), 2);
         string label = format("%.2f", generate_boxes[i].score);
         label = this->class_names[generate_boxes[i].label] + ":" + label;
-        putText(srcimg, label, Point(xmin, ymin - 5), FONT_HERSHEY_SIMPLEX, 0.75, Scalar(0, 255, 0), 1);
+        putText(srcimg, label, Point(xmin, ymin - 5), FONT_HERSHEY_SIMPLEX, 0.75, Scalar(0, 255, 0), 2);
     }
 }
 
@@ -287,6 +288,9 @@ int main()
 #ifdef VIDEO_TEST
     cv::VideoCapture cap(fmt::format("{}{}", SOURCE_PATH, "/videos/test.mp4"));
     Mat src_img;
+    int frame_count = 0;
+    auto last_time = chrono::high_resolution_clock::now();
+    double fps = 0.0;
     cap.read(src_img);
 
     if (src_img.empty())
@@ -297,9 +301,23 @@ int main()
     {
         while (!src_img.empty())
         {
+            frame_count++;
+
             mynet.detect(src_img);
             static const string kWinName = "Deep learning object detection in OpenCV";
             namedWindow(kWinName, WINDOW_NORMAL);
+
+            auto current_time = chrono::high_resolution_clock::now();
+            chrono::duration<double> elapsed = current_time - last_time;
+            if (elapsed.count() >= 1.0)
+            {
+                fps = frame_count / elapsed.count();
+                frame_count = 0;
+                last_time = current_time;
+            }
+            string fps_text = "FPS: " + to_string(int(fps));
+            putText(src_img, fps_text, Point(10, 30), FONT_HERSHEY_SIMPLEX, 1, Scalar(0, 255, 0), 2);
+
             imshow(kWinName, src_img);
             cv::waitKey(10);
             cap.read(src_img);
