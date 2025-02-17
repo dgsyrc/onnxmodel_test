@@ -1,0 +1,5 @@
+.vscode/
+build/
+3rdparty/fmt/
+*.mp4
+*.avi
