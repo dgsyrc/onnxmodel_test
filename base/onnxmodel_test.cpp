@@ -273,7 +273,7 @@ void NanoDet_Plus::detect(Mat &srcimg)
 
 int main()
 {
-    NanoDet_Plus mynet("/home/ccong/onnxmodel_test/onnxmodel/model_best.onnx", "/home/ccong/onnxmodel_test/config/classes.txt", 320, 0.5, 0.5); /// choice = ["onnxmodel/nanodet-plus-m_320.onnx", "onnxmodel/nanodet-plus-m_416.onnx","onnxmodel/nanodet-plus-m-1.5x_320.onnx", "onnxmodel/nanodet-plus-m-1.5x_416.onnx"]
+    NanoDet_Plus mynet(fmt::format("{}{}", SOURCE_PATH, "/onnxmodel/model_best.onnx"), fmt::format("{}{}", SOURCE_PATH, "/config/classes.txt"), 320, 0.5, 0.5); /// choice = ["onnxmodel/nanodet-plus-m_320.onnx", "onnxmodel/nanodet-plus-m_416.onnx","onnxmodel/nanodet-plus-m-1.5x_320.onnx", "onnxmodel/nanodet-plus-m-1.5x_416.onnx"]
     auto error_idntifier = fmt::format(fg(fmt::color::red) | fmt::emphasis::bold, "ERROR");
 #ifdef IMAGE_TEST
     string imgpath = "/home/ccong/onnxmodel_test/imgs/000003.jpg";
