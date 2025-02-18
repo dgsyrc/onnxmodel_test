@@ -36,6 +36,12 @@ find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 link_libraries(${OpenCV_LIBS})
 
+#onnxruntime
+set(ONNXRUNTIME_ROOT_PATH /usr/local)
+set(ONNXRUNTIME_INCLUDE_DIRS ${ONNXRUNTIME_ROOT_PATH}/include/onnxruntime
+                             ${ONNXRUNTIME_ROOT_PATH}/onnxruntime)
+set(ONNXRUNTIME_LIB ${ONNXRUNTIME_ROOT_PATH}/lib/libonnxruntime.so)
+
 # Add fmtlib directory
 add_subdirectory(3rdparty/fmt)
 # Add fmtlib include to EXTRA_INCLUDES
@@ -147,10 +153,13 @@ list(APPEND EXTRA_INCLUDES base)
 # Add EXTRA_INCLUDES to project includes
 include_directories(${EXTRA_INCLUDES})
 
-# Add base/RobotVision_Sirius to executable
+# Add base/onnxmodel_test to executable
 add_executable(onnxmodel_test base/onnxmodel_test.cpp)
 
-# Add shared library link to RobotVision_Sirius
+# Add base/onnxmodel_test_ort to executable
+add_executable(onnxmodel_test_ort base/onnxmodel_test_ort.cpp)
+
+# Add shared library link to onnxmodel_test
 target_link_libraries(onnxmodel_test
     PUBLIC
     Threads::Threads
@@ -162,11 +171,29 @@ target_link_libraries(onnxmodel_test
     #${RVS_EXTRA_LIBS}
 )
 
-# Set RobotVision_Sirius compile cxx_std features
+# Add shared library link to onnxmodel_test
+target_link_libraries(onnxmodel_test_ort
+    PUBLIC
+    Threads::Threads
+    fmt::fmt
+    ${OpenCV_LIBS}
+    ${EXTRA_LIBS}
+    ${ONNXRUNTIME_LIB}
+    PRIVATE
+    #${RVS_EXTRA_LIBS}
+)
+
+# Set onnxmodel_test compile cxx_std features
 target_compile_features(onnxmodel_test PUBLIC cxx_std_${CMAKE_CXX_STANDARD})
 
-# Set RobotVision_Sirius linking time optimization to true
+# Set onnxmodel_test linking time optimization to true
 set_target_properties(onnxmodel_test PROPERTIES INTERPROCEDURAL_OPTIMIZATION True)
+
+# Set onnxmodel_test compile cxx_std features
+target_compile_features(onnxmodel_test_ort PUBLIC cxx_std_${CMAKE_CXX_STANDARD})
+
+# Set onnxmodel_test linking time optimization to true
+set_target_properties(onnxmodel_test_ort PROPERTIES INTERPROCEDURAL_OPTIMIZATION True)
 
 # Set built binary to ~/bin
 set(EXECUTABLE_OUTPUT_PATH "${PROJECT_BINARY_DIR}/bin")
@@ -181,6 +208,8 @@ set(SOURCE_PATH ${PROJECT_SOURCE_DIR})
 #set(SAVE_FILE_PATH ${PROJECT_SOURCE_DIR}/configs/camera)
 target_compile_definitions(onnxmodel_test PRIVATE "CONFIG_FILE_PATH=\"${CONFIG_FILE_PATH}\"")
 target_compile_definitions(onnxmodel_test PRIVATE "SOURCE_PATH=\"${SOURCE_PATH}\"")
+target_compile_definitions(onnxmodel_test_ort PRIVATE "CONFIG_FILE_PATH=\"${CONFIG_FILE_PATH}\"")
+target_compile_definitions(onnxmodel_test_ort PRIVATE "SOURCE_PATH=\"${SOURCE_PATH}\"")
 #target_compile_definitions(rvs-basic-buff PRIVATE "CONFIG_FILE_PATH=\"${CONFIG_FILE_PATH}\"")
 #target_compile_definitions(rvs-onnx-inferring PRIVATE "CONFIG_FILE_PATH=\"${CONFIG_FILE_PATH}\"")
 #target_compile_definitions(rvs-video-record PRIVATE "CONFIG_FILE_PATH=\"${CONFIG_FILE_PATH}\"")

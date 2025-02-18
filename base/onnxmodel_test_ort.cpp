@@ -2,20 +2,20 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <chrono>
 #include <math.h>
 #include <fmt/core.h>
 #include <fmt/color.h>
-#include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
+// #include <cuda_provider_factory.h>
+#include <onnxruntime/onnxruntime_cxx_api.h>
 
 #define VIDEO_TEST
 // #define IMAGE_TEST
 
 using namespace cv;
-using namespace dnn;
 using namespace std;
+using namespace Ort;
 
 typedef struct BoxInfo
 {
@@ -30,7 +30,7 @@ typedef struct BoxInfo
 class NanoDet_Plus
 {
 public:
-    NanoDet_Plus(string model_path, string classesFile, int imgsize, float nms_threshold, float objThreshold);
+    NanoDet_Plus(string model_path, string classesFile, float nms_threshold, float objThreshold);
     void detect(Mat &cv_image);
 
 private:
@@ -40,22 +40,30 @@ private:
     int num_class;
 
     Mat resize_image(Mat srcimg, int *newh, int *neww, int *top, int *left);
-    void normalize(Mat &srcimg);
+    vector<float> input_image_;
+    void normalize_(Mat img);
     void softmax_(const float *x, float *y, int length);
     void generate_proposal(vector<BoxInfo> &generate_boxes, const float *preds);
     void nms(vector<BoxInfo> &input_boxes);
     const bool keep_ratio = false;
     int inpWidth;
     int inpHeight;
-    const int reg_max = 7;
+    int reg_max;
     const int num_stages = 4;
     const int stride[4] = {8, 16, 32, 64};
     const float mean[3] = {103.53, 116.28, 123.675};
-    const float std[3] = {57.375, 57.12, 58.395};
-    Net net;
+    const float stds[3] = {57.375, 57.12, 58.395};
+
+    Env env = Env(ORT_LOGGING_LEVEL_ERROR, "nanodetplus");
+    Ort::Session *ort_session = nullptr;
+    SessionOptions sessionOptions = SessionOptions();
+    vector<char *> input_names;
+    vector<char *> output_names;
+    vector<vector<int64_t>> input_node_dims;  // >=1 outputs
+    vector<vector<int64_t>> output_node_dims; // >=1 outputs
 };
 
-NanoDet_Plus::NanoDet_Plus(string model_path, string classesFile, int imgsize, float nms_threshold, float objThreshold)
+NanoDet_Plus::NanoDet_Plus(string model_path, string classesFile, float nms_threshold, float objThreshold)
 {
     ifstream ifs(classesFile.c_str());
     string line;
@@ -64,10 +72,44 @@ NanoDet_Plus::NanoDet_Plus(string model_path, string classesFile, int imgsize, f
     this->num_class = class_names.size();
     this->nms_threshold = nms_threshold;
     this->score_threshold = objThreshold;
+    sessionOptions.SetIntraOpNumThreads(4);
 
-    this->inpHeight = imgsize;
-    this->inpWidth = imgsize;
-    this->net = readNet(model_path);
+    sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+    ort_session = new Session(env, model_path.c_str(), sessionOptions);
+    size_t numInputNodes = ort_session->GetInputCount();
+    size_t numOutputNodes = ort_session->GetOutputCount();
+    AllocatorWithDefaultOptions allocator;
+    for (size_t i = 0; i < numInputNodes; i++)
+    {
+        char *copied_input_name = new char[strlen(ort_session->GetInputNameAllocated(i, allocator).get()) + 1];
+        strcpy(copied_input_name, ort_session->GetInputNameAllocated(i, allocator).get());
+        input_names.push_back(copied_input_name);
+
+        Ort::TypeInfo input_type_info = ort_session->GetInputTypeInfo(i);
+        auto input_tensor_info = input_type_info.GetTensorTypeAndShapeInfo();
+        auto input_dims = input_tensor_info.GetShape();
+        input_node_dims.push_back(input_dims);
+    }
+    // fmt::print("[info] numOutputNodes:{}\n", numOutputNodes);
+    for (size_t i = 0; i < numOutputNodes; i++)
+    {
+        char *copied_output_name = new char[strlen(ort_session->GetOutputNameAllocated(i, allocator).get()) + 1];
+        strcpy(copied_output_name, ort_session->GetOutputNameAllocated(i, allocator).get());
+        output_names.push_back(copied_output_name);
+
+        Ort::TypeInfo output_type_info = ort_session->GetOutputTypeInfo(i);
+        auto output_tensor_info = output_type_info.GetTensorTypeAndShapeInfo();
+        auto output_dims = output_tensor_info.GetShape();
+        output_node_dims.push_back(output_dims);
+        /*for (int j = 0; j < output_dims.size(); j++)
+        {
+            cout << output_dims[j] << ",";
+        }
+        cout << endl;*/
+    }
+    this->inpHeight = input_node_dims[0][2];
+    this->inpWidth = input_node_dims[0][3];
+    this->reg_max = (output_node_dims[0][output_node_dims[0].size() - 1] - this->num_class) / 4 - 1;
 }
 
 Mat NanoDet_Plus::resize_image(Mat srcimg, int *newh, int *neww, int *top, int *left)
@@ -103,19 +145,22 @@ Mat NanoDet_Plus::resize_image(Mat srcimg, int *newh, int *neww, int *top, int *
     return dstimg;
 }
 
-void NanoDet_Plus::normalize(Mat &img)
+void NanoDet_Plus::normalize_(Mat img)
 {
-    img.convertTo(img, CV_32F);
-    int i = 0, j = 0;
-    for (i = 0; i < img.rows; i++)
+    //    img.convertTo(img, CV_32F);
+    int row = img.rows;
+    int col = img.cols;
+    this->input_image_.resize(row * col * img.channels());
+    for (int c = 0; c < 3; c++)
     {
-        float *pdata = (float *)(img.data + i * img.step);
-        for (j = 0; j < img.cols; j++)
+        for (int i = 0; i < row; i++)
         {
-            pdata[0] = (pdata[0] - this->mean[0]) / this->std[0];
-            pdata[1] = (pdata[1] - this->mean[1]) / this->std[1];
-            pdata[2] = (pdata[2] - this->mean[2]) / this->std[2];
-            pdata += 3;
+            for (int j = 0; j < col; j++)
+            {
+                float pix = img.ptr<uchar>(i)[j * 3 + c];
+                // this->input_image_[c * row * col + i * col + j] = (pix / 255.0 - mean[c] / 255.0) / (stds[c] / 255.0);
+                this->input_image_[c * row * col + i * col + j] = (pix - mean[c]) / stds[c];
+            }
         }
     }
 }
@@ -243,15 +288,16 @@ void NanoDet_Plus::detect(Mat &srcimg)
     int newh = 0, neww = 0, top = 0, left = 0;
     Mat cv_image = srcimg.clone();
     Mat dst = this->resize_image(cv_image, &newh, &neww, &top, &left);
-    this->normalize(dst);
-    Mat blob = blobFromImage(dst);
+    this->normalize_(dst);
+    array<int64_t, 4> input_shape_{1, 3, this->inpHeight, this->inpWidth};
 
-    this->net.setInput(blob);
-    vector<Mat> outs;
-    this->net.forward(outs, this->net.getUnconnectedOutLayersNames());
+    auto allocator_info = MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
+    Value input_tensor_ = Value::CreateTensor<float>(allocator_info, input_image_.data(), input_image_.size(), input_shape_.data(), input_shape_.size());
+
+    vector<Value> ort_outputs = ort_session->Run(RunOptions{nullptr}, &input_names[0], &input_tensor_, 1, output_names.data(), output_names.size()); //
     /////generate proposals
     vector<BoxInfo> generate_boxes;
-    const float *preds = (float *)outs[0].data;
+    const float *preds = ort_outputs[0].GetTensorMutableData<float>();
     generate_proposal(generate_boxes, preds);
 
     //// Perform non maximum suppression to eliminate redundant overlapping boxes with
@@ -268,14 +314,15 @@ void NanoDet_Plus::detect(Mat &srcimg)
         rectangle(srcimg, Point(xmin, ymin), Point(xmax, ymax), Scalar(0, 0, 255), 2);
         string label = format("%.2f", generate_boxes[i].score);
         label = this->class_names[generate_boxes[i].label] + ":" + label;
-        putText(srcimg, label, Point(xmin, ymin - 5), FONT_HERSHEY_SIMPLEX, 0.75, Scalar(0, 255, 0), 2);
+        putText(srcimg, label, Point(xmin, ymin - 5), FONT_HERSHEY_SIMPLEX, 0.75, Scalar(0, 255, 0), 1);
     }
 }
 
 int main()
 {
-    NanoDet_Plus mynet(fmt::format("{}{}", SOURCE_PATH, "/onnxmodel/model_best.onnx"), fmt::format("{}{}", SOURCE_PATH, "/config/classes.txt"), 320, 0.5, 0.5); /// choice = ["onnxmodel/nanodet-plus-m_320.onnx", "onnxmodel/nanodet-plus-m_416.onnx","onnxmodel/nanodet-plus-m-1.5x_320.onnx", "onnxmodel/nanodet-plus-m-1.5x_416.onnx"]
+    NanoDet_Plus mynet(fmt::format("{}{}", SOURCE_PATH, "/onnxmodel/model_best.onnx"), fmt::format("{}{}", SOURCE_PATH, "/config/classes.txt"), 0.5, 0.5);
     auto error_idntifier = fmt::format(fg(fmt::color::red) | fmt::emphasis::bold, "ERROR");
+    auto idntifier = fmt::format(fg(fmt::color::green) | fmt::emphasis::bold, "Info");
 #ifdef IMAGE_TEST
     string imgpath = "/home/ccong/onnxmodel_test/imgs/000003.jpg";
     Mat srcimg = imread(imgpath);
@@ -305,10 +352,10 @@ int main()
         {
             frame_count++;
             total_frame++;
-            if (frame_count % 4 != 1)
+            /*if (frame_count % 3 != 1)
             {
                 continue;
-            }
+            }*/
             mynet.detect(src_img);
             static const string kWinName = "Output";
             namedWindow(kWinName, WINDOW_NORMAL);
@@ -328,6 +375,7 @@ int main()
             putText(src_img, fps_text, Point(10, 30), FONT_HERSHEY_SIMPLEX, 1, Scalar(0, 255, 0), 2);
             putText(src_img, frame_text, Point(10, 60), FONT_HERSHEY_SIMPLEX, 1, Scalar(0, 255, 0), 2);
             putText(src_img, time_text, Point(10, 90), FONT_HERSHEY_SIMPLEX, 1, Scalar(0, 255, 0), 2);
+            // fmt::print("[{}] FPS:{} Frame:{} Time:{}\n", idntifier, int(fps), int(total_frame), int(elapsed_from_start.count()));
             imshow(kWinName, src_img);
             cv::waitKey(1);
             cap.read(src_img);
