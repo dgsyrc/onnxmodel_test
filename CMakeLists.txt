@@ -159,6 +159,9 @@ add_executable(onnxmodel_test base/onnxmodel_test.cpp)
 # Add base/onnxmodel_test_ort to executable
 add_executable(onnxmodel_test_ort base/onnxmodel_test_ort.cpp)
 
+# Add base/onnxmodel_test_ort_with_roi to executable
+add_executable(onnxmodel_test_ort_with_roi base/onnxmodel_test_ort_with_roi.cpp)
+
 # Add shared library link to onnxmodel_test
 target_link_libraries(onnxmodel_test
     PUBLIC
@@ -171,8 +174,20 @@ target_link_libraries(onnxmodel_test
     #${RVS_EXTRA_LIBS}
 )
 
-# Add shared library link to onnxmodel_test
+# Add shared library link to onnxmodel_test_ort
 target_link_libraries(onnxmodel_test_ort
+    PUBLIC
+    Threads::Threads
+    fmt::fmt
+    ${OpenCV_LIBS}
+    ${EXTRA_LIBS}
+    ${ONNXRUNTIME_LIB}
+    PRIVATE
+    #${RVS_EXTRA_LIBS}
+)
+
+# Add shared library link to onnxmodel_test_ort_with_roi
+target_link_libraries(onnxmodel_test_ort_with_roi
     PUBLIC
     Threads::Threads
     fmt::fmt
@@ -195,6 +210,12 @@ target_compile_features(onnxmodel_test_ort PUBLIC cxx_std_${CMAKE_CXX_STANDARD})
 # Set onnxmodel_test linking time optimization to true
 set_target_properties(onnxmodel_test_ort PROPERTIES INTERPROCEDURAL_OPTIMIZATION True)
 
+# Set onnxmodel_test compile cxx_std features
+target_compile_features(onnxmodel_test_ort_with_roi PUBLIC cxx_std_${CMAKE_CXX_STANDARD})
+
+# Set onnxmodel_test linking time optimization to true
+set_target_properties(onnxmodel_test_ort_with_roi PROPERTIES INTERPROCEDURAL_OPTIMIZATION True)
+
 # Set built binary to ~/bin
 set(EXECUTABLE_OUTPUT_PATH "${PROJECT_BINARY_DIR}/bin")
 
@@ -210,6 +231,8 @@ target_compile_definitions(onnxmodel_test PRIVATE "CONFIG_FILE_PATH=\"${CONFIG_F
 target_compile_definitions(onnxmodel_test PRIVATE "SOURCE_PATH=\"${SOURCE_PATH}\"")
 target_compile_definitions(onnxmodel_test_ort PRIVATE "CONFIG_FILE_PATH=\"${CONFIG_FILE_PATH}\"")
 target_compile_definitions(onnxmodel_test_ort PRIVATE "SOURCE_PATH=\"${SOURCE_PATH}\"")
+target_compile_definitions(onnxmodel_test_ort_with_roi PRIVATE "CONFIG_FILE_PATH=\"${CONFIG_FILE_PATH}\"")
+target_compile_definitions(onnxmodel_test_ort_with_roi PRIVATE "SOURCE_PATH=\"${SOURCE_PATH}\"")
 #target_compile_definitions(rvs-basic-buff PRIVATE "CONFIG_FILE_PATH=\"${CONFIG_FILE_PATH}\"")
 #target_compile_definitions(rvs-onnx-inferring PRIVATE "CONFIG_FILE_PATH=\"${CONFIG_FILE_PATH}\"")
 #target_compile_definitions(rvs-video-record PRIVATE "CONFIG_FILE_PATH=\"${CONFIG_FILE_PATH}\"")
